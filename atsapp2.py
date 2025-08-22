@@ -1,18 +1,12 @@
-#from dotenv import load_dotenv
 import streamlit as st
 import os
 import io
 import base64
 from PIL import Image
-import pdf2image
+import fitz  # PyMuPDF
 import google.generativeai as genai
-#load_dotenv()
 
-#api_key = os.getenv("GOOGLE_API_KEY")
-
-#genai.configure(api_key=api_key)
-# Configure API key (better to use st.secrets or environment variables)
-
+# Configure API key
 api_key = st.secrets["GOOGLE_API_KEY"]
 if "GOOGLE_API_KEY" not in os.environ:
     os.environ["GOOGLE_API_KEY"] = api_key
@@ -21,26 +15,37 @@ genai.configure(api_key=api_key)
 def get_gemini_response(input_text, pdf_content, prompt):
     """Get response from Gemini model"""
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash-exp")  # Updated model name
+        model = genai.GenerativeModel("gemini-1.5-flash")  # Updated model name
         response = model.generate_content([prompt, pdf_content[0], input_text])
         return response.text if hasattr(response, "text") else str(response)
     except Exception as e:
         return f"Error generating response: {str(e)}"
 
 def input_pdf_setup(uploaded_file):
-    """Convert PDF to image format for Gemini"""
+    """Convert PDF to image format for Gemini using PyMuPDF"""
     if uploaded_file is not None:
         try:
-            images = pdf2image.convert_from_bytes(uploaded_file.read())
-            first_page = images[0]
+            # Read the uploaded file
+            pdf_bytes = uploaded_file.read()
             
-            img_byte_arr = io.BytesIO()
-            first_page.save(img_byte_arr, format='JPEG')
-            img_byte_arr = img_byte_arr.getvalue()
+            # Open PDF with PyMuPDF
+            pdf_document = fitz.open(stream=pdf_bytes, filetype="pdf")
+            
+            # Get the first page
+            first_page = pdf_document[0]
+            
+            # Convert page to image (pixmap)
+            pix = first_page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))  # 2x resolution
+            
+            # Convert pixmap to PIL Image
+            img_data = pix.tobytes("jpeg")
+            
+            # Close the document
+            pdf_document.close()
             
             pdf_parts = [{
                 "mime_type": "image/jpeg",
-                "data": base64.b64encode(img_byte_arr).decode()
+                "data": base64.b64encode(img_data).decode()
             }]
             return pdf_parts
         except Exception as e:
@@ -57,8 +62,7 @@ st.set_page_config(
 )
 
 # Main header
-st.header("🎯 ExpertResumeCheckv1.0" \
-"")
+st.header("🎯 ExpertResumeCheckv1.0")
 
 # Input section
 col1, col2 = st.columns([2, 1])
@@ -95,7 +99,7 @@ with col2:
 with col3:
     submit3 = st.button("🎯 ATS Score and Match Percentage", use_container_width=True)
 
-# Prompts
+# Prompts (keeping your original prompts)
 input_prompt1 = """
 You are an experienced Technical Human Resource Manager specializing in recruiting for Metallurgical and Materials Engineering roles in industries such as steel, mining, automotive, aerospace, and manufacturing.
 
